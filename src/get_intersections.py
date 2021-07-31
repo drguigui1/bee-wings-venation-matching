@@ -6,8 +6,9 @@ import cv2
 import os
 import numpy as np
 import pandas as pd
-from skimage.exposure import rescale_intensity
-from skimage.morphology import disk, square, erosion, dilation, area_closing, remove_small_objects, opening, closing
+
+from skimage.filters import threshold_sauvola
+from skimage.morphology import disk, square, remove_small_objects, opening
 from skimage.util import invert
 
 # --- Image Processing pipeline ---
@@ -15,43 +16,33 @@ from skimage.util import invert
 def RGB_to_gray(img):
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-def apply_intensity_rescale(img):
-    p1, p2 = np.percentile(img, (10, 95))
-    return rescale_intensity(img, in_range=(p1, p2))
-
-def apply_threshold(img, threshold_value):
-    _, img = cv2.threshold(img, threshold_value, 255, 0)
-    return img
+def apply_threshold_sauvola(img):
+    threshold_value = threshold_sauvola(img, 89, 0.15)
+    return (img > threshold_value).astype(np.uint8)
 
 def remove_small_obj(img, min_size):
-    tmp = (invert(img) > 0).copy()
-    tmp = remove_small_objects(tmp, min_size=min_size)
-    return invert(tmp)
+    return remove_small_objects(img < 1, min_size=min_size)
 
 def apply_opening(img, footprint):
     return opening(img, footprint)
 
-
-def apply_closing(img, footprint):
-    return closing(img, footprint)
-
 def compute_connected_components(img):
     return cv2.connectedComponents(img.astype(np.uint8))[1]
 
-def apply_preprocessing(img, verbose=False):
+def apply_preprocessing(img):
     img_list = [img]
 
     img_list.append(RGB_to_gray(img_list[-1]))
 
-    img_list.append(apply_intensity_rescale(img_list[-1]))
+    img_list.append(apply_threshold_sauvola(img_list[-1]))
 
-    img_list.append(apply_threshold(img_list[-1], 100))
+    img_list.append(apply_opening(invert(img_list[-1]), square(1)))
 
-    img_list.append(remove_small_obj(img_list[-1], 300))
+    img_list.append(remove_small_obj(invert(img_list[-1]), 20000))
 
-    img_list.append(apply_opening(img_list[-1], disk(5)))
+    img_list.append(remove_small_obj(img_list[-1], 1000))
 
-    img_list.append(apply_closing(img_list[-1], square(2)))
+    img_list.append(apply_opening(img_list[-1], disk(10)))
 
     img_list.append(compute_connected_components(img_list[-1]))
 
